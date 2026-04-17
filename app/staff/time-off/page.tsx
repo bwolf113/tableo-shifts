@@ -34,7 +34,19 @@ const LEAVE_BADGE_STYLES: Record<string, string> = {
 };
 
 function calcHourTiles(shifts: any[], requests: any[]) {
-  const approved = requests.filter((r) => r.status === "approved");
+  // Scope to current week only
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7)); // Monday
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const weekStartStr = weekStart.toISOString().split("T")[0];
+  const weekEndStr = weekEnd.toISOString().split("T")[0];
+
+  const weekShifts = shifts.filter((s) => s.date >= weekStartStr && s.date <= weekEndStr);
+  const approved = requests.filter(
+    (r) => r.status === "approved" && r.end_date >= weekStartStr && r.start_date <= weekEndStr
+  );
 
   // Build a map: date -> leave_type for approved leave days
   const leaveDayType: Record<string, string> = {};
@@ -51,7 +63,7 @@ function calcHourTiles(shifts: any[], requests: any[]) {
   let vacationHours = 0;
   let sickHours = 0;
 
-  for (const shift of shifts) {
+  for (const shift of weekShifts) {
     const h = shift.scheduled_hours || 0;
     totalScheduled += h;
     const leaveType = leaveDayType[shift.date];
