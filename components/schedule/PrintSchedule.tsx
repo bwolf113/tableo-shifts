@@ -8,6 +8,7 @@ interface PrintScheduleProps {
   weekStart: string;
   shifts: Shift[];
   status: string;
+  onLeaveKeys?: Set<string>;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -23,6 +24,7 @@ export function PrintSchedule({
   weekStart,
   shifts,
   status,
+  onLeaveKeys = new Set(),
 }: PrintScheduleProps) {
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const date = addDays(new Date(weekStart), i);
@@ -183,22 +185,22 @@ export function PrintSchedule({
                       {ROLE_LABELS[emp.role] || emp.role}
                     </td>
                     {weekDays.map(({ dateStr, isClosed }) => {
-                      const dayShifts = getShiftsForEmployeeDay(
-                        emp.id,
-                        dateStr
-                      );
+                      const dayShifts = getShiftsForEmployeeDay(emp.id, dateStr);
+                      const onLeave = onLeaveKeys.has(`${emp.id}|${dateStr}`);
                       return (
                         <td
                           key={dateStr}
                           className={`border border-neutral-300 px-2 py-1.5 text-center text-xs ${
-                            isClosed ? "bg-neutral-50" : ""
+                            isClosed ? "bg-neutral-50" : onLeave ? "bg-amber-50" : ""
                           }`}
                         >
-                          {dayShifts.map((s, i) => (
-                            <div key={i}>
-                              {s.start_time}-{s.end_time}
-                            </div>
-                          ))}
+                          {onLeave ? (
+                            <span className="text-amber-600 font-medium">On leave</span>
+                          ) : (
+                            dayShifts.map((s, i) => (
+                              <div key={i}>{s.start_time}-{s.end_time}</div>
+                            ))
+                          )}
                         </td>
                       );
                     })}
@@ -237,22 +239,22 @@ export function PrintSchedule({
                       {ROLE_LABELS[emp.role] || emp.role}
                     </td>
                     {weekDays.map(({ dateStr, isClosed }) => {
-                      const dayShifts = getShiftsForEmployeeDay(
-                        emp.id,
-                        dateStr
-                      );
+                      const dayShifts = getShiftsForEmployeeDay(emp.id, dateStr);
+                      const onLeave = onLeaveKeys.has(`${emp.id}|${dateStr}`);
                       return (
                         <td
                           key={dateStr}
                           className={`border border-neutral-300 px-2 py-1.5 text-center text-xs ${
-                            isClosed ? "bg-neutral-50" : ""
+                            isClosed ? "bg-neutral-50" : onLeave ? "bg-amber-50" : ""
                           }`}
                         >
-                          {dayShifts.map((s, i) => (
-                            <div key={i}>
-                              {s.start_time}-{s.end_time}
-                            </div>
-                          ))}
+                          {onLeave ? (
+                            <span className="text-amber-600 font-medium">On leave</span>
+                          ) : (
+                            dayShifts.map((s, i) => (
+                              <div key={i}>{s.start_time}-{s.end_time}</div>
+                            ))
+                          )}
                         </td>
                       );
                     })}

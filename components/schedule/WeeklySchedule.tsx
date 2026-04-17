@@ -36,7 +36,8 @@ export function WeeklySchedule({
   const [scheduleWeek, setScheduleWeek] = useState<ScheduleWeek | null>(null);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [coversByDate, setCoversByDate] = useState<Record<string, number>>({});
-  const [timeOffEmployeeIds, setTimeOffEmployeeIds] = useState<Set<string>>(new Set());
+  const [approvedLeaveIds, setApprovedLeaveIds] = useState<Set<string>>(new Set());
+  const [pendingLeaveIds, setPendingLeaveIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [dismissingAlert, setDismissingAlert] = useState(false);
   const [showAddModal, setShowAddModal] = useState<{ date: string } | null>(null);
@@ -53,9 +54,10 @@ export function WeeklySchedule({
   const fetchSchedule = useCallback(async () => {
     setLoading(true);
     try {
-      const [schedRes, timeOffRes] = await Promise.all([
+      const [schedRes, approvedRes, pendingRes] = await Promise.all([
         fetch(`/api/shifts?week_start=${currentWeekStart}`),
         fetch(`/api/time-off?week_start=${currentWeekStart}&status=approved`),
+        fetch(`/api/time-off?week_start=${currentWeekStart}&status=pending`),
       ]);
       if (schedRes.ok) {
         const data = await schedRes.json();
@@ -63,17 +65,19 @@ export function WeeklySchedule({
         setShifts(data.data.shifts);
         setCoversByDate(data.data.covers_by_date || {});
       }
-      if (timeOffRes.ok) {
-        const toData = await timeOffRes.json();
-        const ids = new Set<string>(
-          (toData.data || []).map((r: { employee_id: string }) => r.employee_id)
-        );
-        // Always include the URL param highlight if present
-        if (highlightEmployeeParam) ids.add(highlightEmployeeParam);
-        setTimeOffEmployeeIds(ids);
-      } else if (highlightEmployeeParam) {
-        setTimeOffEmployeeIds(new Set([highlightEmployeeParam]));
+      const approvedIds = new Set<string>();
+      const pendingIds = new Set<string>();
+      if (approvedRes.ok) {
+        const d = await approvedRes.json();
+        (d.data || []).forEach((r: { employee_id: string }) => approvedIds.add(r.employee_id));
       }
+      if (pendingRes.ok) {
+        const d = await pendingRes.json();
+        (d.data || []).forEach((r: { employee_id: string }) => pendingIds.add(r.employee_id));
+      }
+      if (highlightEmployeeParam) approvedIds.add(highlightEmployeeParam);
+      setApprovedLeaveIds(approvedIds);
+      setPendingLeaveIds(pendingIds);
     } catch (err) {
       console.error("Failed to fetch schedule:", err);
     } finally {
@@ -247,6 +251,8 @@ export function WeeklySchedule({
   };
 
   const [copying, setCopying] = useState(false);
+  const [notifying, setNotifying] = useState(false);
+  const [notifyResult, setNotifyResult] = useState<{ sent: number; skipped: number } | null>(null);
 
   const handleCopyPreviousWeek = async () => {
     const hasShifts = shifts.length > 0;
@@ -292,6 +298,29 @@ export function WeeklySchedule({
       console.error("Copy failed:", err);
     } finally {
       setCopying(false);
+    }
+  };
+
+  const handleNotifyStaff = async () => {
+    if (notifying) return;
+    setNotifying(true);
+    setNotifyResult(null);
+    try {
+      const res = await fetch("/api/schedules/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week_start: currentWeekStart }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setNotifyResult(data.data);
+      } else {
+        alert(data.error || "Failed to send notifications");
+      }
+    } catch {
+      alert("Failed to send notifications");
+    } finally {
+      setNotifying(false);
     }
   };
 
@@ -421,7 +450,20 @@ export function WeeklySchedule({
             </button>
           )}
 
-          {/* Print */}
+          {/* Notify staff + Print */}
+          {shifts.length > 0 && scheduleWeek?.status === "published" && (
+            <button
+              onClick={handleNotifyStaff}
+              disabled={notifying}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium border border-neutral-300 rounded-lg hover:bg-neutral-50 disabled:opacity-50"
+              title="Email schedule to all staff"
+            >
+              <svg className="w-4 h-4 text-neutral-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+              </svg>
+              {notifying ? "Sending..." : "Notify Staff"}
+            </button>
+          )}
           {shifts.length > 0 && (
             <a
               href={`/dashboard/schedule/print?week_start=${currentWeekStart}`}
@@ -477,6 +519,21 @@ export function WeeklySchedule({
               </svg>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Notify staff result */}
+      {notifyResult && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 flex items-center justify-between">
+          <p className="text-sm text-green-800">
+            Schedule sent to <strong>{notifyResult.sent}</strong> staff member{notifyResult.sent !== 1 ? "s" : ""}
+            {notifyResult.skipped > 0 && ` (${notifyResult.skipped} skipped — no email address)`}
+          </p>
+          <button onClick={() => setNotifyResult(null)} className="text-green-400 hover:text-green-600 ml-4">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
       )}
 
@@ -594,7 +651,13 @@ export function WeeklySchedule({
                         key={shift.id}
                         shift={shift}
                         canEdit={canEdit}
-                        onLeave={!!shift.employee_id && timeOffEmployeeIds.has(shift.employee_id)}
+                        leaveStatus={
+                          shift.employee_id && approvedLeaveIds.has(shift.employee_id)
+                            ? "approved"
+                            : shift.employee_id && pendingLeaveIds.has(shift.employee_id)
+                              ? "pending"
+                              : undefined
+                        }
                         onClick={() => canEdit && setEditingShift(shift)}
                         onDelete={() => handleDeleteShift(shift.id)}
                       />
@@ -654,7 +717,7 @@ export function WeeklySchedule({
   );
 }
 
-function LeaveWarningIcon() {
+function LeaveWarningIcon({ status }: { status: "approved" | "pending" }) {
   const [show, setShow] = useState(false);
   return (
     <span
@@ -662,10 +725,10 @@ function LeaveWarningIcon() {
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
     >
-      <span className="text-amber-500 cursor-default text-xs">⚠</span>
+      <span className={clsx("cursor-default text-xs", status === "approved" ? "text-amber-500" : "text-pink-500")}>⚠</span>
       {show && (
         <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-xs font-normal text-white bg-neutral-800 rounded whitespace-nowrap pointer-events-none z-50">
-          On approved leave
+          {status === "approved" ? "On approved leave" : "Leave request pending"}
         </span>
       )}
     </span>
@@ -675,13 +738,13 @@ function LeaveWarningIcon() {
 function ShiftCard({
   shift,
   canEdit,
-  onLeave,
+  leaveStatus,
   onClick,
   onDelete,
 }: {
   shift: Shift;
   canEdit: boolean;
-  onLeave?: boolean;
+  leaveStatus?: "approved" | "pending";
   onClick: () => void;
   onDelete: () => void;
 }) {
@@ -735,19 +798,24 @@ function ShiftCard({
       onClick={onClick}
       className={clsx(
         "px-2 py-1.5 rounded text-xs group relative cursor-pointer",
-        onLeave
+        leaveStatus === "approved"
           ? "bg-amber-50 border-l-2 border-amber-400 hover:bg-amber-100/70 ring-1 ring-amber-300"
-          : shift.department === "foh"
-            ? "bg-blue-50 border-l-2 border-blue-400 hover:bg-blue-100/70"
-            : "bg-orange-50 border-l-2 border-orange-400 hover:bg-orange-100/70"
+          : leaveStatus === "pending"
+            ? "bg-pink-50 border-l-2 border-pink-400 hover:bg-pink-100/70 ring-1 ring-pink-300"
+            : shift.department === "foh"
+              ? "bg-blue-50 border-l-2 border-blue-400 hover:bg-blue-100/70"
+              : "bg-orange-50 border-l-2 border-orange-400 hover:bg-orange-100/70"
       )}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 min-w-0">
-          <span className={clsx("font-medium truncate", onLeave ? "text-amber-800" : "text-neutral-800")}>
+          <span className={clsx(
+            "font-medium truncate",
+            leaveStatus === "approved" ? "text-amber-800" : leaveStatus === "pending" ? "text-pink-800" : "text-neutral-800"
+          )}>
             {name}
           </span>
-          {onLeave && <LeaveWarningIcon />}
+          {leaveStatus && <LeaveWarningIcon status={leaveStatus} />}
         </div>
         {canEdit && (
           <button

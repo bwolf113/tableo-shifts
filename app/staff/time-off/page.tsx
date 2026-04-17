@@ -33,8 +33,39 @@ const LEAVE_BADGE_STYLES: Record<string, string> = {
   other: "bg-neutral-100 text-neutral-600",
 };
 
+function calcHourTiles(shifts: any[], requests: any[]) {
+  const approved = requests.filter((r) => r.status === "approved");
+
+  // Build a map: date -> leave_type for approved leave days
+  const leaveDayType: Record<string, string> = {};
+  for (const req of approved) {
+    const start = new Date(req.start_date);
+    const end = new Date(req.end_date);
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const ds = d.toISOString().split("T")[0];
+      leaveDayType[ds] = req.leave_type;
+    }
+  }
+
+  let totalScheduled = 0;
+  let vacationHours = 0;
+  let sickHours = 0;
+
+  for (const shift of shifts) {
+    const h = shift.scheduled_hours || 0;
+    totalScheduled += h;
+    const leaveType = leaveDayType[shift.date];
+    if (leaveType === "sick_leave") sickHours += h;
+    else if (leaveType) vacationHours += h; // time_off, personal, holiday, other
+  }
+
+  const workableHours = totalScheduled - vacationHours - sickHours;
+  return { totalScheduled, workableHours, vacationHours, sickHours };
+}
+
 export default function StaffTimeOffPage() {
   const [requests, setRequests] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -46,10 +77,13 @@ export default function StaffTimeOffPage() {
   });
 
   useEffect(() => {
-    fetch("/api/staff/time-off")
-      .then((r) => r.json())
-      .then((d) => setRequests(d.data || []))
-      .finally(() => setLoading(false));
+    Promise.all([
+      fetch("/api/staff/time-off").then((r) => r.json()),
+      fetch("/api/staff/shifts").then((r) => r.json()),
+    ]).then(([toData, shiftsData]) => {
+      setRequests(toData.data || []);
+      setShifts(shiftsData.data || []);
+    }).finally(() => setLoading(false));
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -90,6 +124,31 @@ export default function StaffTimeOffPage() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-4">
+        {/* Hours summary tiles */}
+        {!loading && (() => {
+          const { totalScheduled, workableHours, vacationHours, sickHours } = calcHourTiles(shifts, requests);
+          return (
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <div className="bg-white rounded-lg border border-neutral-200 p-3 text-center">
+                <p className="text-2xl font-bold text-neutral-900">{totalScheduled.toFixed(1)}h</p>
+                <p className="text-xs text-neutral-500 mt-0.5">Total scheduled</p>
+              </div>
+              <div className="bg-white rounded-lg border border-green-200 p-3 text-center">
+                <p className="text-2xl font-bold text-green-700">{workableHours.toFixed(1)}h</p>
+                <p className="text-xs text-neutral-500 mt-0.5">Workable hours</p>
+              </div>
+              <div className="bg-white rounded-lg border border-blue-200 p-3 text-center">
+                <p className="text-2xl font-bold text-blue-600">{vacationHours.toFixed(1)}h</p>
+                <p className="text-xs text-neutral-500 mt-0.5">Vacation leave</p>
+              </div>
+              <div className="bg-white rounded-lg border border-purple-200 p-3 text-center">
+                <p className="text-2xl font-bold text-purple-600">{sickHours.toFixed(1)}h</p>
+                <p className="text-xs text-neutral-500 mt-0.5">Sick leave</p>
+              </div>
+            </div>
+          );
+        })()}
+
         {!showForm ? (
           <button
             onClick={() => setShowForm(true)}
