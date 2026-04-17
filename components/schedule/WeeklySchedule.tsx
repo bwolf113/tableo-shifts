@@ -65,19 +65,35 @@ export function WeeklySchedule({
         setShifts(data.data.shifts);
         setCoversByDate(data.data.covers_by_date || {});
       }
-      const approvedIds = new Set<string>();
-      const pendingIds = new Set<string>();
+      // Store "employeeId|date" keys so we only flag the specific days on leave
+      const approvedKeys = new Set<string>();
+      const pendingKeys = new Set<string>();
+
+      const expandLeaveRequest = (r: { employee_id: string; start_date: string; end_date: string }, target: Set<string>) => {
+        const start = new Date(r.start_date + "T00:00:00");
+        const end = new Date(r.end_date + "T00:00:00");
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          target.add(`${r.employee_id}|${d.toISOString().split("T")[0]}`);
+        }
+      };
+
       if (approvedRes.ok) {
         const d = await approvedRes.json();
-        (d.data || []).forEach((r: { employee_id: string }) => approvedIds.add(r.employee_id));
+        (d.data || []).forEach((r: { employee_id: string; start_date: string; end_date: string }) => expandLeaveRequest(r, approvedKeys));
       }
       if (pendingRes.ok) {
         const d = await pendingRes.json();
-        (d.data || []).forEach((r: { employee_id: string }) => pendingIds.add(r.employee_id));
+        (d.data || []).forEach((r: { employee_id: string; start_date: string; end_date: string }) => expandLeaveRequest(r, pendingKeys));
       }
-      if (highlightEmployeeParam) approvedIds.add(highlightEmployeeParam);
-      setApprovedLeaveIds(approvedIds);
-      setPendingLeaveIds(pendingIds);
+      if (highlightEmployeeParam) {
+        // Highlight all days of the week for this employee
+        for (let i = 0; i < 7; i++) {
+          const d = addDays(new Date(currentWeekStart), i);
+          approvedKeys.add(`${highlightEmployeeParam}|${format(d, "yyyy-MM-dd")}`);
+        }
+      }
+      setApprovedLeaveIds(approvedKeys);
+      setPendingLeaveIds(pendingKeys);
     } catch (err) {
       console.error("Failed to fetch schedule:", err);
     } finally {
@@ -652,9 +668,9 @@ export function WeeklySchedule({
                         shift={shift}
                         canEdit={canEdit}
                         leaveStatus={
-                          shift.employee_id && approvedLeaveIds.has(shift.employee_id)
+                          shift.employee_id && approvedLeaveIds.has(`${shift.employee_id}|${dateStr}`)
                             ? "approved"
-                            : shift.employee_id && pendingLeaveIds.has(shift.employee_id)
+                            : shift.employee_id && pendingLeaveIds.has(`${shift.employee_id}|${dateStr}`)
                               ? "pending"
                               : undefined
                         }
