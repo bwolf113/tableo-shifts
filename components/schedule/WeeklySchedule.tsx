@@ -73,7 +73,9 @@ export function WeeklySchedule({
         const start = new Date(r.start_date + "T00:00:00");
         const end = new Date(r.end_date + "T00:00:00");
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          target.add(`${r.employee_id}|${d.toISOString().split("T")[0]}`);
+          // Use local date parts to avoid UTC offset shifting the date
+          const ds = format(d, "yyyy-MM-dd");
+          target.add(`${r.employee_id}|${ds}`);
         }
       };
 
