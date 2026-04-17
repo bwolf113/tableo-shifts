@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 /**
@@ -9,7 +9,14 @@ import { useRouter } from "next/navigation";
  */
 export default function DevPage() {
   const router = useRouter();
-  const [step, setStep] = useState<"connect" | "details" | "syncing" | "done">("connect");
+  const [step, setStep] = useState<"connect" | "details" | "syncing" | "done" | "checking">("checking");
+
+  // Try to auto-login with an existing restaurant on mount
+  useEffect(() => {
+    fetch("/api/dev/auto-login", { method: "POST" })
+      .then((r) => r.ok ? router.replace("/dashboard") : setStep("connect"))
+      .catch(() => setStep("connect"));
+  }, [router]);
   const [apiToken, setApiToken] = useState("");
   const [apiUrl, setApiUrl] = useState("https://app.tableo.com");
   const [status, setStatus] = useState("");
@@ -362,6 +369,14 @@ export default function DevPage() {
                 Set Up Restaurant
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Auto-checking */}
+        {step === "checking" && (
+          <div className="text-center py-8">
+            <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-4" />
+            <p className="text-neutral-400 text-sm">Connecting...</p>
           </div>
         )}
 

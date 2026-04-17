@@ -2,7 +2,7 @@ import { jwtVerify, SignJWT } from "jose";
 import { cookies } from "next/headers";
 
 const SESSION_COOKIE = "tableo_shifts_session";
-const SESSION_DURATION = 24 * 60 * 60; // 24 hours
+const SESSION_DURATION = 30 * 24 * 60 * 60; // 30 days
 
 export interface TableoUser {
   sub: number;           // User ID in Tableo
