@@ -104,9 +104,12 @@ export function WeeklySchedule({
   const [syncing, setSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
 
-  // Auto-sync booking data then fetch schedule
+  // Load schedule immediately, sync bookings in background
   const syncAndFetch = useCallback(async () => {
-    // Trigger background sync (non-blocking — will auto-generate draft if needed)
+    // Fetch schedule right away — don't wait for sync
+    fetchSchedule();
+
+    // Sync bookings in background
     setSyncing(true);
     try {
       const syncRes = await fetch("/api/schedules/sync", {
@@ -118,19 +121,15 @@ export function WeeklySchedule({
         const syncData = await syncRes.json();
         if (syncData.data?.synced) {
           setLastSynced(new Date().toLocaleTimeString());
-          if (syncData.data.auto_generated) {
-            // A draft was just auto-generated — reload to show it
-          }
+          // If a draft was auto-generated, reload to show it
+          if (syncData.data.auto_generated) fetchSchedule();
         }
       }
     } catch {
-      // Sync failure is non-blocking
+      // Non-blocking
     } finally {
       setSyncing(false);
     }
-
-    // Always fetch the schedule (whether sync succeeded or not)
-    await fetchSchedule();
   }, [currentWeekStart, fetchSchedule]);
 
   useEffect(() => {
