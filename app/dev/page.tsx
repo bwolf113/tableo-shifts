@@ -9,14 +9,29 @@ import { useRouter } from "next/navigation";
  */
 export default function DevPage() {
   const router = useRouter();
-  const [step, setStep] = useState<"connect" | "details" | "syncing" | "done" | "checking">("checking");
+  const [step, setStep] = useState<"connect" | "details" | "syncing" | "done" | "checking" | "pick">("checking");
+  const [restaurants, setRestaurants] = useState<{ slug: string; name: string }[]>([]);
 
   // Try to auto-login with an existing restaurant on mount
   useEffect(() => {
     fetch("/api/dev/auto-login", { method: "POST" })
-      .then((r) => r.ok ? router.replace("/dashboard") : setStep("connect"))
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success) router.replace("/dashboard");
+        else if (d.restaurants) { setRestaurants(d.restaurants); setStep("pick"); }
+        else setStep("connect");
+      })
       .catch(() => setStep("connect"));
   }, [router]);
+
+  const handlePickRestaurant = async (slug: string) => {
+    const res = await fetch("/api/dev/auto-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug }),
+    });
+    if (res.ok) router.replace("/dashboard");
+  };
   const [apiToken, setApiToken] = useState("");
   const [apiUrl, setApiUrl] = useState("https://app.tableo.com");
   const [status, setStatus] = useState("");
@@ -369,6 +384,29 @@ export default function DevPage() {
                 Set Up Restaurant
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Restaurant picker */}
+        {step === "pick" && (
+          <div className="space-y-2">
+            <p className="text-sm text-neutral-600 mb-3">Select a restaurant:</p>
+            {restaurants.map((r) => (
+              <button
+                key={r.slug}
+                onClick={() => handlePickRestaurant(r.slug)}
+                className="w-full text-left px-4 py-3 rounded-lg border border-neutral-200 hover:border-blue-400 hover:bg-blue-50 transition-colors"
+              >
+                <p className="font-medium text-neutral-900">{r.name}</p>
+                <p className="text-xs text-neutral-400">{r.slug}</p>
+              </button>
+            ))}
+            <button
+              onClick={() => setStep("connect")}
+              className="w-full py-2 text-sm text-neutral-400 hover:text-neutral-600 mt-2"
+            >
+              + Connect a new restaurant
+            </button>
           </div>
         )}
 
