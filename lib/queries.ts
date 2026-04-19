@@ -347,6 +347,24 @@ export async function getShiftsForEmployee(
   return (data || []) as Shift[];
 }
 
+export async function getShiftsForRestaurantRange(
+  restaurantId: string,
+  startDate: string,
+  endDate: string
+): Promise<Shift[]> {
+  const { data, error } = await getDb()
+    .from("shifts")
+    .select("*, employee:employees(id, first_name, last_name, role, color)")
+    .eq("restaurant_id", restaurantId)
+    .gte("date", startDate)
+    .lte("date", endDate)
+    .order("date")
+    .order("start_time");
+
+  if (error) throw new Error(`Failed to get restaurant shifts: ${error.message}`);
+  return (data || []) as Shift[];
+}
+
 export async function createShift(
   shift: Omit<Shift, "id" | "created_at" | "updated_at" | "employee">
 ): Promise<Shift> {

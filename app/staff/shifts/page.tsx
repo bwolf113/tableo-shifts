@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getStaffSession } from "@/lib/staff-auth";
 import {
   getShiftsForEmployee,
+  getShiftsForRestaurantRange,
   getEmployeeById,
   getRestaurantById,
   getDailyStaffingData,
@@ -54,7 +55,7 @@ export default async function StaffShiftsPage({
   const nextWeekStr = format(addWeeks(weekStart, 1), "yyyy-MM-dd");
   const weekLabel = `${format(weekStart, "d MMM")} – ${format(weekEnd, "d MMM yyyy")}`;
 
-  const [shifts, leaveData, staffingData] = await Promise.all([
+  const [shifts, leaveData, staffingData, allShifts] = await Promise.all([
     getShiftsForEmployee(session.employeeId, weekStartStr, weekEndStr),
     getDb()
       .from("time_off_requests")
@@ -64,7 +65,40 @@ export default async function StaffShiftsPage({
       .lte("start_date", weekEndStr)
       .gte("end_date", weekStartStr),
     getDailyStaffingData(session.restaurantId, weekStartStr, weekEndStr),
+    getShiftsForRestaurantRange(session.restaurantId, weekStartStr, weekEndStr),
   ]);
+
+  const shiftsByDateAll = new Map<string, typeof allShifts>();
+  for (const s of allShifts) {
+    const list = shiftsByDateAll.get(s.date) || [];
+    list.push(s);
+    shiftsByDateAll.set(s.date, list);
+  }
+
+  // Overnight-safe minute range: if end ≤ start, treat end as next day.
+  const toRange = (startTime: string, endTime: string): [number, number] => {
+    const toMin = (t: string) => {
+      const [h, m] = t.split(":").map(Number);
+      return h * 60 + m;
+    };
+    const s = toMin(startTime);
+    let e = toMin(endTime);
+    if (e <= s) e += 1440;
+    return [s, e];
+  };
+
+  const getCoworkers = (shift: (typeof shifts)[number]) => {
+    const sameDay = shiftsByDateAll.get(shift.date) || [];
+    const [myStart, myEnd] = toRange(shift.start_time, shift.end_time);
+    return sameDay.filter((other) => {
+      if (other.id === shift.id) return false;
+      if (other.is_open) return false;
+      if (!other.employee) return false;
+      if (other.employee.id === session.employeeId) return false;
+      const [oStart, oEnd] = toRange(other.start_time, other.end_time);
+      return oStart < myEnd && oEnd > myStart;
+    });
+  };
 
   const allLeave = leaveData.data || [];
   const approvedLeave = allLeave.filter((r) => r.status === "approved");
@@ -256,7 +290,9 @@ export default async function StaffShiftsPage({
 
                 {dayShifts.length > 0 ? (
                   <div className="divide-y divide-neutral-50">
-                    {dayShifts.map((shift) => (
+                    {dayShifts.map((shift) => {
+                      const coworkers = getCoworkers(shift);
+                      return (
                       <div key={shift.id} className={`px-4 py-3 ${leave?.status === "approved" ? "opacity-50" : ""}`}>
                         <div className="flex items-center justify-between">
                           <div>
@@ -272,8 +308,34 @@ export default async function StaffShiftsPage({
                           <span className="text-xs text-neutral-400">{shift.scheduled_hours}h</span>
                         </div>
                         {shift.notes && <p className="text-xs text-neutral-400 mt-1">{shift.notes}</p>}
+                        {coworkers.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-neutral-100">
+                            <p className="text-[10px] uppercase tracking-wide text-neutral-600 mb-1.5">
+                              Working with you ({coworkers.length})
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {coworkers.map((c) => (
+                                <span
+                                  key={c.id}
+                                  className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-neutral-100 rounded-full text-xs text-neutral-700"
+                                  title={`${c.start_time}–${c.end_time} · ${ROLE_LABELS[c.role] || c.role}`}
+                                >
+                                  <span
+                                    className="w-2 h-2 rounded-full"
+                                    style={{ backgroundColor: c.employee?.color || "#9ca3af" }}
+                                  />
+                                  {c.employee?.first_name}
+                                  <span className="text-neutral-500">
+                                    · {ROLE_LABELS[c.role] || c.role}
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="px-4 py-3">
